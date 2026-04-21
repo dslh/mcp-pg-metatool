@@ -31,6 +31,7 @@ import {
   listViews,
   getViewDefinition,
   getTypeNames,
+  getInaccessibleColumns,
 } from '../../src/schemaService.js';
 
 describe('schemaService', () => {
@@ -299,6 +300,50 @@ describe('schemaService', () => {
         expect.stringContaining('pg_views'),
         ['test_schema', 'test_view']
       );
+    });
+  });
+
+  describe('getInaccessibleColumns', () => {
+    it('returns rows filtered by has_column_privilege', async () => {
+      const rows = [
+        { table_schema: 'public', table_name: 'users', column_name: 'ssn' },
+        { table_schema: 'public', table_name: 'users', column_name: 'password_hash' },
+      ];
+      vi.mocked(pool.query).mockResolvedValue(
+        createQueryResult(rows) as Awaited<ReturnType<typeof pool.query>>
+      );
+
+      const result = await getInaccessibleColumns();
+
+      expect(result).toEqual(rows);
+      const sql = vi.mocked(pool.query).mock.calls[0]?.[0] as string;
+      expect(sql).toContain('has_column_privilege(current_user');
+      expect(sql).toContain("NOT IN ('pg_catalog', 'information_schema', 'pg_toast')");
+    });
+
+    it('filters by schema when provided', async () => {
+      vi.mocked(pool.query).mockResolvedValue(
+        createQueryResult([]) as Awaited<ReturnType<typeof pool.query>>
+      );
+
+      await getInaccessibleColumns('auth');
+
+      expect(pool.query).toHaveBeenCalledWith(
+        expect.stringContaining('n.nspname = $1'),
+        ['auth']
+      );
+    });
+
+    it('omits the schema predicate when not provided', async () => {
+      vi.mocked(pool.query).mockResolvedValue(
+        createQueryResult([]) as Awaited<ReturnType<typeof pool.query>>
+      );
+
+      await getInaccessibleColumns();
+
+      expect(pool.query).toHaveBeenCalledWith(expect.any(String), []);
+      const sql = vi.mocked(pool.query).mock.calls[0]?.[0] as string;
+      expect(sql).not.toContain('n.nspname = $1');
     });
   });
 

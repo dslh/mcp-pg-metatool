@@ -42,6 +42,12 @@ export interface ViewDefinition {
   columns: ColumnInfo[];
 }
 
+export interface InaccessibleColumn {
+  table_schema: string;
+  table_name: string;
+  column_name: string;
+}
+
 /**
  * List all schemas in the database
  */
@@ -159,6 +165,36 @@ export async function getTypeNames(oids: number[]): Promise<Map<number, string>>
   }
 
   return typeMap;
+}
+
+/**
+ * List columns of user tables/views that the current DB role cannot SELECT,
+ * as reported by PostgreSQL's has_column_privilege. Skips system schemas.
+ */
+export async function getInaccessibleColumns(
+  schemaName?: string
+): Promise<InaccessibleColumn[]> {
+  const hasFilter = schemaName !== undefined;
+  const query = `
+    SELECT
+      n.nspname AS table_schema,
+      c.relname AS table_name,
+      a.attname AS column_name
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_attribute a ON a.attrelid = c.oid
+    WHERE c.relkind IN ('r', 'v', 'm', 'p', 'f')
+      AND a.attnum > 0
+      AND NOT a.attisdropped
+      AND n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+      ${hasFilter ? 'AND n.nspname = $1' : ''}
+      AND NOT has_column_privilege(current_user, c.oid, a.attnum, 'SELECT')
+    ORDER BY n.nspname, c.relname, a.attnum
+  `;
+
+  const params = hasFilter ? [schemaName] : [];
+  const result = await pool.query<InaccessibleColumn>(query, params);
+  return result.rows;
 }
 
 /**

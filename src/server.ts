@@ -7,6 +7,7 @@ import * as deleteSavedQuery from './tools/deleteSavedQuery.js';
 import * as describeTable from './tools/describeTable.js';
 import * as describeView from './tools/describeView.js';
 import * as executeSqlQuery from './tools/executeSqlQuery.js';
+import * as listInaccessibleColumns from './tools/listInaccessibleColumns.js';
 import * as listSavedQueries from './tools/listSavedQueries.js';
 import * as listSchemas from './tools/listSchemas.js';
 import * as listTables from './tools/listTables.js';
@@ -51,6 +52,7 @@ function createServer(): { server: McpServer; registeredTools: Map<string, Regis
     registerTool(describeTable.name, describeTable.config, describeTable.handler);
     registerTool(listViews.name, listViews.config, listViews.handler);
     registerTool(describeView.name, describeView.config, describeView.handler);
+    registerTool(listInaccessibleColumns.name, listInaccessibleColumns.config, listInaccessibleColumns.handler);
     coreToolsStatus = 'management tools disabled, query and introspection tools enabled';
   } else {
     // Default: register all core tools
@@ -64,6 +66,7 @@ function createServer(): { server: McpServer; registeredTools: Map<string, Regis
     registerTool(describeTable.name, describeTable.config, describeTable.handler);
     registerTool(listViews.name, listViews.config, listViews.handler);
     registerTool(describeView.name, describeView.config, describeView.handler);
+    registerTool(listInaccessibleColumns.name, listInaccessibleColumns.config, listInaccessibleColumns.handler);
     coreToolsStatus = 'all core tools enabled';
   }
 

@@ -14,6 +14,8 @@ export interface SafetyConfig {
   blacklistedColumnNames: Set<string>;
   /** Per-statement timeout in milliseconds, or null for no timeout. */
   queryTimeoutMs: number | null;
+  /** When true, augment blacklistFull at startup with columns the DB user can't SELECT. */
+  autoFromGrants: boolean;
 }
 
 function parseBool(raw: string | undefined): boolean {
@@ -68,10 +70,31 @@ function loadConfig(): SafetyConfig {
     blacklistFull: full,
     blacklistedColumnNames: columns,
     queryTimeoutMs: parseTimeoutMs(process.env['QUERY_TIMEOUT_MS']),
+    autoFromGrants: parseBool(process.env['AUTO_BLACKLIST_FROM_GRANTS']),
   };
 }
 
 export const safetyConfig: SafetyConfig = loadConfig();
+
+export interface BlacklistEntry {
+  table_schema: string;
+  table_name: string;
+  column_name: string;
+}
+
+/** Merge additional entries into the live blacklist Sets. Returns the number newly added. */
+export function mergeBlacklistEntries(entries: BlacklistEntry[]): number {
+  let added = 0;
+  for (const e of entries) {
+    const fqn = `${e.table_schema}.${e.table_name}.${e.column_name}`;
+    if (!safetyConfig.blacklistFull.has(fqn)) {
+      safetyConfig.blacklistFull.add(fqn);
+      safetyConfig.blacklistedColumnNames.add(e.column_name);
+      added += 1;
+    }
+  }
+  return added;
+}
 
 export function describeSafetyConfig(): string {
   const ro = safetyConfig.readOnly ? 'ENABLED' : 'disabled';

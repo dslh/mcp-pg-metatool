@@ -70,7 +70,15 @@ export FIELD_BLACKLIST="public.users.ssn,public.users.password_hash,public.payme
 # applies to the agent's queries and to the server's own introspection lookups.
 # Unset (or 0) means no timeout.
 export QUERY_TIMEOUT_MS="30000"
+
+# Auto-populate the field blacklist from the DB user's column-level GRANTs.
+# At startup, runs `has_column_privilege(current_user, ...)` against every
+# user-schema column and merges any denials into FIELD_BLACKLIST. Lets the
+# tool-level filter track the DB ACL without maintaining two lists.
+export AUTO_BLACKLIST_FROM_GRANTS="true"
 ```
+
+The `list_inaccessible_columns` tool surfaces the same information to the agent on demand, which lets it pick explicit column lists proactively instead of hitting a `SELECT *` permission error.
 
 **Read-only caveats.** PostgreSQL's read-only transaction mode still permits `SET`, `SHOW`, temp tables, and writes to *other* databases via `dblink`/FDW. Use DB role privileges for an authoritative lock-down.
 
@@ -134,6 +142,7 @@ Add to your MCP client configuration (e.g., Claude Desktop):
 | `describe_table` | Show columns, types, and constraints for a table |
 | `list_views` | List views in a schema |
 | `describe_view` | Show view columns and definition |
+| `list_inaccessible_columns` | List columns the current DB user lacks SELECT on |
 
 ## Examples
 
