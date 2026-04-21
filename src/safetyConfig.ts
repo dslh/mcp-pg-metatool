@@ -1,7 +1,7 @@
 /**
  * Tool-level safety configuration.
  *
- * Sources two opt-in env vars — both default to disabled so existing deployments
+ * Sources opt-in env vars — all default to disabled so existing deployments
  * behave unchanged. DB-level controls (role privileges, column GRANTs) remain
  * the authoritative defense; this module adds defense-in-depth at the tool layer.
  */
@@ -12,6 +12,8 @@ export interface SafetyConfig {
   blacklistFull: Set<string>;
   /** Bare column names from the blacklist, for fallback matching on aliased/computed outputs. */
   blacklistedColumnNames: Set<string>;
+  /** Per-statement timeout in milliseconds, or null for no timeout. */
+  queryTimeoutMs: number | null;
 }
 
 function parseBool(raw: string | undefined): boolean {
@@ -47,12 +49,25 @@ function parseBlacklist(raw: string | undefined): {
   return { full, columns };
 }
 
+function parseTimeoutMs(raw: string | undefined): number | null {
+  if (raw === undefined || raw.trim() === '') return null;
+  const n = Number.parseInt(raw.trim(), 10);
+  if (!Number.isFinite(n) || n < 0 || String(n) !== raw.trim()) {
+    console.error(
+      `[safetyConfig] Ignoring malformed QUERY_TIMEOUT_MS value: "${raw}" (expected a non-negative integer)`
+    );
+    return null;
+  }
+  return n === 0 ? null : n;
+}
+
 function loadConfig(): SafetyConfig {
   const { full, columns } = parseBlacklist(process.env['FIELD_BLACKLIST']);
   return {
     readOnly: parseBool(process.env['READONLY_MODE']),
     blacklistFull: full,
     blacklistedColumnNames: columns,
+    queryTimeoutMs: parseTimeoutMs(process.env['QUERY_TIMEOUT_MS']),
   };
 }
 
@@ -61,5 +76,9 @@ export const safetyConfig: SafetyConfig = loadConfig();
 export function describeSafetyConfig(): string {
   const ro = safetyConfig.readOnly ? 'ENABLED' : 'disabled';
   const bl = safetyConfig.blacklistFull.size;
-  return `read-only mode ${ro}, field blacklist: ${String(bl)} ${bl === 1 ? 'entry' : 'entries'}`;
+  const timeout =
+    safetyConfig.queryTimeoutMs === null
+      ? 'none'
+      : `${String(safetyConfig.queryTimeoutMs)}ms`;
+  return `read-only mode ${ro}, field blacklist: ${String(bl)} ${bl === 1 ? 'entry' : 'entries'}, query timeout: ${timeout}`;
 }

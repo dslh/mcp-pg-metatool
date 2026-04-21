@@ -11,6 +11,7 @@ describe('safetyConfig', () => {
     vi.resetModules();
     delete process.env['READONLY_MODE'];
     delete process.env['FIELD_BLACKLIST'];
+    delete process.env['QUERY_TIMEOUT_MS'];
     vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
@@ -89,21 +90,63 @@ describe('safetyConfig', () => {
     });
   });
 
+  describe('QUERY_TIMEOUT_MS parsing', () => {
+    it('defaults to null when unset', async () => {
+      const { safetyConfig } = await import('../../src/safetyConfig.js');
+      expect(safetyConfig.queryTimeoutMs).toBeNull();
+    });
+
+    it('parses a positive integer', async () => {
+      process.env['QUERY_TIMEOUT_MS'] = '30000';
+      const { safetyConfig } = await import('../../src/safetyConfig.js');
+      expect(safetyConfig.queryTimeoutMs).toBe(30000);
+    });
+
+    it('treats 0 as no timeout', async () => {
+      process.env['QUERY_TIMEOUT_MS'] = '0';
+      const { safetyConfig } = await import('../../src/safetyConfig.js');
+      expect(safetyConfig.queryTimeoutMs).toBeNull();
+    });
+
+    it('rejects negative values', async () => {
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      process.env['QUERY_TIMEOUT_MS'] = '-5';
+      const { safetyConfig } = await import('../../src/safetyConfig.js');
+      expect(safetyConfig.queryTimeoutMs).toBeNull();
+      expect(spy).toHaveBeenCalled();
+    });
+
+    it('rejects non-numeric values', async () => {
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      process.env['QUERY_TIMEOUT_MS'] = 'forever';
+      const { safetyConfig } = await import('../../src/safetyConfig.js');
+      expect(safetyConfig.queryTimeoutMs).toBeNull();
+      expect(spy).toHaveBeenCalled();
+    });
+
+    it('rejects values with trailing garbage', async () => {
+      process.env['QUERY_TIMEOUT_MS'] = '30000ms';
+      const { safetyConfig } = await import('../../src/safetyConfig.js');
+      expect(safetyConfig.queryTimeoutMs).toBeNull();
+    });
+  });
+
   describe('describeSafetyConfig', () => {
     it('summarizes the effective state', async () => {
       process.env['READONLY_MODE'] = 'true';
       process.env['FIELD_BLACKLIST'] = 'public.users.ssn,public.users.email';
+      process.env['QUERY_TIMEOUT_MS'] = '15000';
       const { describeSafetyConfig } = await import('../../src/safetyConfig.js');
       expect(describeSafetyConfig()).toBe(
-        'read-only mode ENABLED, field blacklist: 2 entries'
+        'read-only mode ENABLED, field blacklist: 2 entries, query timeout: 15000ms'
       );
     });
 
-    it('uses singular "entry" for size 1', async () => {
+    it('uses singular "entry" for size 1 and "none" for absent timeout', async () => {
       process.env['FIELD_BLACKLIST'] = 'public.users.ssn';
       const { describeSafetyConfig } = await import('../../src/safetyConfig.js');
       expect(describeSafetyConfig()).toBe(
-        'read-only mode disabled, field blacklist: 1 entry'
+        'read-only mode disabled, field blacklist: 1 entry, query timeout: none'
       );
     });
   });

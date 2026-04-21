@@ -22,6 +22,7 @@ describe('client configuration', () => {
     delete process.env['PG_POOL_MAX'];
     delete process.env['PGSSLMODE'];
     delete process.env['READONLY_MODE'];
+    delete process.env['QUERY_TIMEOUT_MS'];
   });
 
   afterEach(() => {
@@ -250,6 +251,81 @@ describe('client configuration', () => {
       expect(clientQuery).toHaveBeenCalledWith(
         'SET SESSION default_transaction_read_only = on'
       );
+    });
+  });
+
+  describe('query timeout', () => {
+    it('registers connect hook that sets statement_timeout when QUERY_TIMEOUT_MS is set', async () => {
+      const onSpy = vi.fn();
+      vi.doMock('pg', () => ({
+        Pool: vi.fn().mockImplementation(() => ({
+          query: vi.fn(),
+          end: vi.fn(),
+          on: onSpy,
+        })),
+      }));
+
+      process.env['DATABASE_URL'] = 'postgresql://localhost/test';
+      process.env['QUERY_TIMEOUT_MS'] = '30000';
+
+      await import('../../src/client.js');
+
+      const connectCall = onSpy.mock.calls.find((call) => call[0] === 'connect');
+      expect(connectCall).toBeDefined();
+
+      const hook = connectCall?.[1] as (client: { query: (sql: string) => void }) => void;
+      const clientQuery = vi.fn();
+      hook({ query: clientQuery });
+      expect(clientQuery).toHaveBeenCalledWith(
+        'SET SESSION statement_timeout = 30000'
+      );
+    });
+
+    it('issues both SETs when read-only and timeout are enabled together', async () => {
+      const onSpy = vi.fn();
+      vi.doMock('pg', () => ({
+        Pool: vi.fn().mockImplementation(() => ({
+          query: vi.fn(),
+          end: vi.fn(),
+          on: onSpy,
+        })),
+      }));
+
+      process.env['DATABASE_URL'] = 'postgresql://localhost/test';
+      process.env['READONLY_MODE'] = 'true';
+      process.env['QUERY_TIMEOUT_MS'] = '5000';
+
+      await import('../../src/client.js');
+
+      const connectCall = onSpy.mock.calls.find((call) => call[0] === 'connect');
+      const hook = connectCall?.[1] as (client: { query: (sql: string) => void }) => void;
+      const clientQuery = vi.fn();
+      hook({ query: clientQuery });
+
+      expect(clientQuery).toHaveBeenCalledWith(
+        'SET SESSION default_transaction_read_only = on'
+      );
+      expect(clientQuery).toHaveBeenCalledWith(
+        'SET SESSION statement_timeout = 5000'
+      );
+    });
+
+    it('does not register connect hook when neither READONLY_MODE nor QUERY_TIMEOUT_MS is set', async () => {
+      const onSpy = vi.fn();
+      vi.doMock('pg', () => ({
+        Pool: vi.fn().mockImplementation(() => ({
+          query: vi.fn(),
+          end: vi.fn(),
+          on: onSpy,
+        })),
+      }));
+
+      process.env['DATABASE_URL'] = 'postgresql://localhost/test';
+
+      await import('../../src/client.js');
+
+      const connectCalls = onSpy.mock.calls.filter((call) => call[0] === 'connect');
+      expect(connectCalls).toHaveLength(0);
     });
   });
 

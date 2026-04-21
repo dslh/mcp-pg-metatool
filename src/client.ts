@@ -36,9 +36,16 @@ function createPool(): Pool {
 
 export const pool = createPool();
 
-if (safetyConfig.readOnly) {
+if (safetyConfig.readOnly || safetyConfig.queryTimeoutMs !== null) {
   pool.on('connect', (client) => {
-    void client.query('SET SESSION default_transaction_read_only = on');
+    if (safetyConfig.readOnly) {
+      void client.query('SET SESSION default_transaction_read_only = on');
+    }
+    if (safetyConfig.queryTimeoutMs !== null) {
+      void client.query(
+        `SET SESSION statement_timeout = ${String(safetyConfig.queryTimeoutMs)}`
+      );
+    }
   });
 }
 

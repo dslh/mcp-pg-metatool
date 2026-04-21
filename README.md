@@ -64,6 +64,12 @@ export READONLY_MODE="true"
 # Comma-separated list of sensitive columns to redact from tool responses.
 # Format: schema.table.column
 export FIELD_BLACKLIST="public.users.ssn,public.users.password_hash,public.payments.cc_number"
+
+# Per-statement timeout in milliseconds. Sets `statement_timeout` on every
+# pooled connection so PostgreSQL cancels any query that runs too long —
+# applies to the agent's queries and to the server's own introspection lookups.
+# Unset (or 0) means no timeout.
+export QUERY_TIMEOUT_MS="30000"
 ```
 
 **Read-only caveats.** PostgreSQL's read-only transaction mode still permits `SET`, `SHOW`, temp tables, and writes to *other* databases via `dblink`/FDW. Use DB role privileges for an authoritative lock-down.
