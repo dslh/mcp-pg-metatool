@@ -36,6 +36,10 @@ function createPool(): Pool {
 
 export const pool = createPool();
 
+pool.on('error', (error) => {
+  console.error('Idle pool client error (connection discarded, pool will reconnect on next checkout):', error.message);
+});
+
 if (safetyConfig.readOnly || safetyConfig.queryTimeoutMs !== null) {
   pool.on('connect', (client) => {
     if (safetyConfig.readOnly) {

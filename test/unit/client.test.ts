@@ -37,6 +37,7 @@ describe('client configuration', () => {
         Pool: mockPool.mockImplementation(() => ({
           query: vi.fn(),
           end: vi.fn(),
+          on: vi.fn(),
         })),
       }));
 
@@ -58,6 +59,7 @@ describe('client configuration', () => {
         Pool: mockPool.mockImplementation(() => ({
           query: vi.fn(),
           end: vi.fn(),
+          on: vi.fn(),
         })),
       }));
 
@@ -78,6 +80,7 @@ describe('client configuration', () => {
         Pool: mockPool.mockImplementation(() => ({
           query: vi.fn(),
           end: vi.fn(),
+          on: vi.fn(),
         })),
       }));
 
@@ -101,6 +104,7 @@ describe('client configuration', () => {
         Pool: mockPool.mockImplementation(() => ({
           query: vi.fn(),
           end: vi.fn(),
+          on: vi.fn(),
         })),
       }));
 
@@ -122,6 +126,7 @@ describe('client configuration', () => {
         Pool: mockPool.mockImplementation(() => ({
           query: vi.fn(),
           end: vi.fn(),
+          on: vi.fn(),
         })),
       }));
 
@@ -145,6 +150,7 @@ describe('client configuration', () => {
         Pool: mockPool.mockImplementation(() => ({
           query: vi.fn(),
           end: vi.fn(),
+          on: vi.fn(),
         })),
       }));
 
@@ -173,6 +179,7 @@ describe('client configuration', () => {
         Pool: mockPool.mockImplementation(() => ({
           query: vi.fn(),
           end: vi.fn(),
+          on: vi.fn(),
         })),
       }));
 
@@ -193,6 +200,7 @@ describe('client configuration', () => {
         Pool: mockPool.mockImplementation(() => ({
           query: vi.fn(),
           end: vi.fn(),
+          on: vi.fn(),
         })),
       }));
 
@@ -310,6 +318,28 @@ describe('client configuration', () => {
       );
     });
 
+    it('registers an error handler on the pool to prevent idle-client crashes', async () => {
+      const onSpy = vi.fn();
+      vi.doMock('pg', () => ({
+        Pool: vi.fn().mockImplementation(() => ({
+          query: vi.fn(),
+          end: vi.fn(),
+          on: onSpy,
+        })),
+      }));
+
+      process.env['DATABASE_URL'] = 'postgresql://localhost/test';
+
+      await import('../../src/client.js');
+
+      const errorCall = onSpy.mock.calls.find((call) => call[0] === 'error');
+      expect(errorCall).toBeDefined();
+      const handler = errorCall?.[1] as (e: Error) => void;
+      const logSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      expect(() => handler(new Error('connection terminated unexpectedly'))).not.toThrow();
+      expect(logSpy).toHaveBeenCalled();
+    });
+
     it('does not register connect hook when neither READONLY_MODE nor QUERY_TIMEOUT_MS is set', async () => {
       const onSpy = vi.fn();
       vi.doMock('pg', () => ({
@@ -335,6 +365,7 @@ describe('client configuration', () => {
         Pool: vi.fn().mockImplementation(() => ({
           query: vi.fn(),
           end: vi.fn(),
+          on: vi.fn(),
         })),
       }));
 
@@ -349,6 +380,7 @@ describe('client configuration', () => {
         Pool: vi.fn().mockImplementation(() => ({
           query: vi.fn(),
           end: vi.fn(),
+          on: vi.fn(),
         })),
       }));
 
@@ -364,6 +396,7 @@ describe('client configuration', () => {
         Pool: vi.fn().mockImplementation(() => ({
           query: vi.fn(),
           end: vi.fn(),
+          on: vi.fn(),
         })),
       }));
 
