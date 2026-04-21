@@ -7,6 +7,7 @@ import { convertJsonSchemaToZod, convertJsonSchemaToMcpZod } from './jsonSchemaV
 import { mapToPositional } from './parameterMapper.js';
 import { withErrorHandling, type Logger } from './responses.js';
 import { getTypeNames } from './schemaService.js';
+import { augmentSqlError } from './sqlErrorHelper.js';
 import { loadAllTools } from './storage.js';
 import type { SavedToolConfig } from './types.js';
 
@@ -50,7 +51,12 @@ export function createDynamicToolHandler(toolConfig: SavedToolConfig): (params: 
 
       log('executing SQL query');
       const positionalParams = mapToPositional(validatedParams, toolConfig.parameter_order);
-      const result = await pool.query(toolConfig.sql_prepared, positionalParams);
+      let result;
+      try {
+        result = await pool.query(toolConfig.sql_prepared, positionalParams);
+      } catch (error) {
+        throw augmentSqlError(error);
+      }
 
       log('applying field blacklist');
       const filtered = await filterResult(result);

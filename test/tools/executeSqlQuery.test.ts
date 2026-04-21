@@ -231,6 +231,16 @@ describe('executeSqlQuery tool', () => {
 
       expectErrorResponse(response, 'does not exist');
     });
+
+    it('augments column-privilege errors with a recovery hint', async () => {
+      const pgError = new Error('permission denied for column "ssn" of relation "users"');
+      (pgError as Error & { code?: string }).code = '42501';
+      vi.mocked(pool.query).mockRejectedValue(pgError);
+
+      const response = await handler({ query: 'SELECT * FROM users' });
+
+      expectErrorResponse(response, 'describe_table');
+    });
   });
 
   describe('handler - edge cases', () => {

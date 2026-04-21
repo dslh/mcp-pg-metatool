@@ -5,6 +5,7 @@ import { filterResult } from '../fieldFilter.js';
 import { parseNamedParameters, mapToPositional } from '../parameterMapper.js';
 import { withErrorHandling, type Logger } from '../responses.js';
 import { getTypeNames } from '../schemaService.js';
+import { augmentSqlError } from '../sqlErrorHelper.js';
 
 export const name = 'execute_sql_query';
 
@@ -30,7 +31,12 @@ export const handler = ({
     const positionalParams = mapToPositional(params ?? {}, parameterOrder);
 
     log('executing query');
-    const result = await pool.query(sql, positionalParams);
+    let result;
+    try {
+      result = await pool.query(sql, positionalParams);
+    } catch (error) {
+      throw augmentSqlError(error);
+    }
 
     log('applying field blacklist');
     const filtered = await filterResult(result);
