@@ -70,6 +70,8 @@ export FIELD_BLACKLIST="public.users.ssn,public.users.password_hash,public.payme
 
 **Blacklist behavior.** For each column returned by a query, the server resolves its origin via `pg_class`/`pg_attribute` and drops any entry whose `schema.table.column` matches the blacklist. Matched columns are reported back to the agent in a `redactedColumns` array. Computed/aliased outputs (e.g. `SELECT ssn AS x FROM users`) can't be resolved to an origin column and fall back to matching by output name; these are reported under `unresolvedRedactions` as a best-effort filter — rely on column-level `GRANT`/`REVOKE` if this edge case matters to you. The blacklist also filters `describe_table` / `describe_view` output so sensitive column names aren't leaked through introspection.
 
+**Blacklist does NOT prevent side-channel probing.** The filter only inspects returned rows, not the query itself. An agent running `SELECT id FROM users WHERE ssn = '123-45-6789'` can still learn whether that SSN exists by observing row count, even though no `ssn` column is ever returned. Column-level `REVOKE SELECT (ssn)` in PostgreSQL blocks both reading *and* filtering/ordering/joining on the column — it is the only way to close this gap. Treat the tool-level blacklist as a display-layer safety net, not an access control.
+
 ## Usage
 
 ### Running the Server
