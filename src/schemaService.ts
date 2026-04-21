@@ -4,6 +4,7 @@
  */
 
 import { pool } from './client.js';
+import { filterColumnList } from './fieldFilter.js';
 
 export interface SchemaInfo {
   schema_name: string;
@@ -93,7 +94,7 @@ export async function getTableColumns(
   `;
 
   const result = await pool.query<ColumnInfo>(query, [schemaName, tableName]);
-  return result.rows;
+  return filterColumnList(result.rows, schemaName, tableName);
 }
 
 /**

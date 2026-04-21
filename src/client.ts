@@ -1,5 +1,7 @@
 import { Pool, type PoolConfig } from 'pg';
 
+import { safetyConfig } from './safetyConfig.js';
+
 function buildPoolConfig(): PoolConfig {
   const databaseUrl = process.env['DATABASE_URL'];
 
@@ -33,6 +35,12 @@ function createPool(): Pool {
 }
 
 export const pool = createPool();
+
+if (safetyConfig.readOnly) {
+  pool.on('connect', (client) => {
+    void client.query('SET SESSION default_transaction_read_only = on');
+  });
+}
 
 // Graceful shutdown
 process.on('SIGINT', () => {

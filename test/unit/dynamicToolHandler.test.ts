@@ -18,7 +18,17 @@ vi.mock('../../src/storage.js', () => ({
   loadAllTools: vi.fn(),
 }));
 
+vi.mock('../../src/safetyConfig.js', () => ({
+  safetyConfig: {
+    readOnly: false,
+    blacklistFull: new Set<string>(),
+    blacklistedColumnNames: new Set<string>(),
+  },
+}));
+
 import { pool } from '../../src/client.js';
+import { safetyConfig } from '../../src/safetyConfig.js';
+import { __clearResolvedCacheForTests } from '../../src/fieldFilter.js';
 import { loadAllTools } from '../../src/storage.js';
 import { createDynamicToolHandler, registerAllTools } from '../../src/dynamicToolHandler.js';
 
@@ -26,6 +36,9 @@ describe('createDynamicToolHandler', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.spyOn(console, 'error').mockImplementation(() => {});
+    safetyConfig.blacklistFull.clear();
+    safetyConfig.blacklistedColumnNames.clear();
+    __clearResolvedCacheForTests();
   });
 
   describe('parameter validation', () => {
@@ -231,6 +244,50 @@ describe('createDynamicToolHandler', () => {
       }>(response);
 
       expect(result.fields[0]?.dataType).toBe('unknown');
+    });
+  });
+
+  describe('field blacklist', () => {
+    it('redacts blacklisted columns from the result', async () => {
+      safetyConfig.blacklistFull.add('public.users.ssn');
+      safetyConfig.blacklistedColumnNames.add('ssn');
+
+      vi.mocked(pool.query)
+        .mockResolvedValueOnce({
+          rows: [{ id: 1, ssn: '123' }],
+          rowCount: 1,
+          fields: [
+            { name: 'id', tableID: 100, columnID: 1, dataTypeID: 23 },
+            { name: 'ssn', tableID: 100, columnID: 2, dataTypeID: 25 },
+          ],
+        } as Awaited<ReturnType<typeof pool.query>>)
+        .mockResolvedValueOnce({
+          rows: [
+            { table_id: 100, column_id: 1, schema_name: 'public', table_name: 'users', column_name: 'id' },
+            { table_id: 100, column_id: 2, schema_name: 'public', table_name: 'users', column_name: 'ssn' },
+          ],
+          rowCount: 2,
+          fields: [],
+        } as Awaited<ReturnType<typeof pool.query>>)
+        .mockResolvedValueOnce(
+          createQueryResult([{ oid: 23, typname: 'int4' }]) as Awaited<ReturnType<typeof pool.query>>
+        );
+
+      const config = createSavedToolConfig({
+        parameter_schema: { type: 'object', properties: {} },
+        parameter_order: [],
+      });
+
+      const handler = createDynamicToolHandler(config);
+      const response = await handler({});
+
+      const result = parseResponseJson<{
+        rows: Record<string, unknown>[];
+        redactedColumns?: string[];
+      }>(response);
+
+      expect(result.rows).toEqual([{ id: 1 }]);
+      expect(result.redactedColumns).toEqual(['public.users.ssn']);
     });
   });
 

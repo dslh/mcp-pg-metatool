@@ -50,6 +50,26 @@ export MCP_PG_DATA_DIR="./data"
 export DISABLE_CORE_TOOLS="none"
 ```
 
+### Safety Features
+
+Two opt-in controls for limiting what the MCP server exposes to the agent. **These are defense-in-depth, not primary controls.** The authoritative way to restrict what the agent can do is to connect with a dedicated PostgreSQL role whose privileges are scoped appropriately (e.g. `GRANT SELECT ON ... TO readonly_role`, `GRANT SELECT (col1, col2) ON sensitive_table TO readonly_role`).
+
+```bash
+# Block mutations at the tool layer. When enabled, every pooled connection
+# runs `SET SESSION default_transaction_read_only = on`, so PostgreSQL itself
+# rejects INSERT/UPDATE/DELETE/DDL/TRUNCATE — including writes smuggled
+# inside CTEs (WITH x AS (UPDATE ...) SELECT ...).
+export READONLY_MODE="true"
+
+# Comma-separated list of sensitive columns to redact from tool responses.
+# Format: schema.table.column
+export FIELD_BLACKLIST="public.users.ssn,public.users.password_hash,public.payments.cc_number"
+```
+
+**Read-only caveats.** PostgreSQL's read-only transaction mode still permits `SET`, `SHOW`, temp tables, and writes to *other* databases via `dblink`/FDW. Use DB role privileges for an authoritative lock-down.
+
+**Blacklist behavior.** For each column returned by a query, the server resolves its origin via `pg_class`/`pg_attribute` and drops any entry whose `schema.table.column` matches the blacklist. Matched columns are reported back to the agent in a `redactedColumns` array. Computed/aliased outputs (e.g. `SELECT ssn AS x FROM users`) can't be resolved to an origin column and fall back to matching by output name; these are reported under `unresolvedRedactions` as a best-effort filter — rely on column-level `GRANT`/`REVOKE` if this edge case matters to you. The blacklist also filters `describe_table` / `describe_view` output so sensitive column names aren't leaked through introspection.
+
 ## Usage
 
 ### Running the Server

@@ -13,7 +13,16 @@ vi.mock('../../src/client.js', () => ({
   },
 }));
 
+vi.mock('../../src/safetyConfig.js', () => ({
+  safetyConfig: {
+    readOnly: false,
+    blacklistFull: new Set<string>(),
+    blacklistedColumnNames: new Set<string>(),
+  },
+}));
+
 import { pool } from '../../src/client.js';
+import { safetyConfig } from '../../src/safetyConfig.js';
 import {
   listSchemas,
   listTables,
@@ -27,6 +36,8 @@ import {
 describe('schemaService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    safetyConfig.blacklistFull.clear();
+    safetyConfig.blacklistedColumnNames.clear();
   });
 
   describe('listSchemas', () => {
@@ -154,6 +165,29 @@ describe('schemaService', () => {
 
       const query = vi.mocked(pool.query).mock.calls[0]?.[0] as string;
       expect(query).toContain('ORDER BY ordinal_position');
+    });
+
+    it('filters blacklisted columns from the result', async () => {
+      safetyConfig.blacklistFull.add('public.users.email');
+      vi.mocked(pool.query).mockResolvedValue(
+        createQueryResult(dbResults.columns) as Awaited<ReturnType<typeof pool.query>>
+      );
+
+      const result = await getTableColumns('users');
+
+      expect(result.find(c => c.column_name === 'email')).toBeUndefined();
+      expect(result.find(c => c.column_name === 'id')).toBeDefined();
+    });
+
+    it('does not filter a same-named column from a different table', async () => {
+      safetyConfig.blacklistFull.add('public.dependents.email');
+      vi.mocked(pool.query).mockResolvedValue(
+        createQueryResult(dbResults.columns) as Awaited<ReturnType<typeof pool.query>>
+      );
+
+      const result = await getTableColumns('users');
+
+      expect(result.find(c => c.column_name === 'email')).toBeDefined();
     });
   });
 

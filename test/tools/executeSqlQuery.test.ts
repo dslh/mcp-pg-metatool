@@ -14,13 +14,26 @@ vi.mock('../../src/client.js', () => ({
   },
 }));
 
+vi.mock('../../src/safetyConfig.js', () => ({
+  safetyConfig: {
+    readOnly: false,
+    blacklistFull: new Set<string>(),
+    blacklistedColumnNames: new Set<string>(),
+  },
+}));
+
 import { pool } from '../../src/client.js';
+import { safetyConfig } from '../../src/safetyConfig.js';
+import { __clearResolvedCacheForTests } from '../../src/fieldFilter.js';
 import { name, config, handler } from '../../src/tools/executeSqlQuery.js';
 
 describe('executeSqlQuery tool', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.spyOn(console, 'error').mockImplementation(() => {});
+    safetyConfig.blacklistFull.clear();
+    safetyConfig.blacklistedColumnNames.clear();
+    __clearResolvedCacheForTests();
   });
 
   describe('tool configuration', () => {
@@ -241,6 +254,69 @@ describe('executeSqlQuery tool', () => {
       await handler({ query: 'SELECT 1', params: undefined });
 
       expect(pool.query).toHaveBeenCalledWith('SELECT 1', []);
+    });
+
+    it('redacts blacklisted columns and reports them', async () => {
+      safetyConfig.blacklistFull.add('public.users.ssn');
+      safetyConfig.blacklistedColumnNames.add('ssn');
+
+      vi.mocked(pool.query)
+        .mockResolvedValueOnce({
+          rows: [{ id: 1, ssn: '123-45-6789' }],
+          rowCount: 1,
+          fields: [
+            { name: 'id', tableID: 100, columnID: 1, dataTypeID: 23 },
+            { name: 'ssn', tableID: 100, columnID: 2, dataTypeID: 25 },
+          ],
+        } as Awaited<ReturnType<typeof pool.query>>)
+        .mockResolvedValueOnce({
+          rows: [
+            { table_id: 100, column_id: 1, schema_name: 'public', table_name: 'users', column_name: 'id' },
+            { table_id: 100, column_id: 2, schema_name: 'public', table_name: 'users', column_name: 'ssn' },
+          ],
+          rowCount: 2,
+          fields: [],
+        } as Awaited<ReturnType<typeof pool.query>>)
+        .mockResolvedValueOnce(
+          createQueryResult([
+            { oid: 23, typname: 'int4' },
+          ]) as Awaited<ReturnType<typeof pool.query>>
+        );
+
+      const response = await handler({ query: 'SELECT id, ssn FROM users' });
+      const result = parseResponseJson<{
+        rows: Record<string, unknown>[];
+        fields: Array<{ name: string }>;
+        redactedColumns?: string[];
+      }>(response);
+
+      expect(result.rows).toEqual([{ id: 1 }]);
+      expect(result.fields.map(f => f.name)).toEqual(['id']);
+      expect(result.redactedColumns).toEqual(['public.users.ssn']);
+    });
+
+    it('reports unresolvedRedactions for aliased sensitive columns', async () => {
+      safetyConfig.blacklistFull.add('public.users.ssn');
+      safetyConfig.blacklistedColumnNames.add('ssn');
+
+      vi.mocked(pool.query)
+        .mockResolvedValueOnce({
+          rows: [{ ssn: 'leaked' }],
+          rowCount: 1,
+          fields: [{ name: 'ssn', tableID: 0, columnID: 0, dataTypeID: 25 }],
+        } as Awaited<ReturnType<typeof pool.query>>)
+        .mockResolvedValueOnce(
+          createQueryResult([]) as Awaited<ReturnType<typeof pool.query>>
+        );
+
+      const response = await handler({ query: 'SELECT users.ssn AS ssn FROM users' });
+      const result = parseResponseJson<{
+        rows: Record<string, unknown>[];
+        unresolvedRedactions?: string[];
+      }>(response);
+
+      expect(result.rows).toEqual([{}]);
+      expect(result.unresolvedRedactions).toEqual(['ssn']);
     });
 
     it('handles INSERT/UPDATE/DELETE queries', async () => {

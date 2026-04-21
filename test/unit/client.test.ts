@@ -21,6 +21,7 @@ describe('client configuration', () => {
     delete process.env['PGPASSWORD'];
     delete process.env['PG_POOL_MAX'];
     delete process.env['PGSSLMODE'];
+    delete process.env['READONLY_MODE'];
   });
 
   afterEach(() => {
@@ -202,6 +203,52 @@ describe('client configuration', () => {
         expect.objectContaining({
           port: 5432,
         })
+      );
+    });
+  });
+
+  describe('read-only mode', () => {
+    it('does not register connect hook when READONLY_MODE is unset', async () => {
+      const onSpy = vi.fn();
+      vi.doMock('pg', () => ({
+        Pool: vi.fn().mockImplementation(() => ({
+          query: vi.fn(),
+          end: vi.fn(),
+          on: onSpy,
+        })),
+      }));
+
+      process.env['DATABASE_URL'] = 'postgresql://localhost/test';
+
+      await import('../../src/client.js');
+
+      const connectCalls = onSpy.mock.calls.filter((call) => call[0] === 'connect');
+      expect(connectCalls).toHaveLength(0);
+    });
+
+    it('registers connect hook that sets read-only when READONLY_MODE=true', async () => {
+      const onSpy = vi.fn();
+      vi.doMock('pg', () => ({
+        Pool: vi.fn().mockImplementation(() => ({
+          query: vi.fn(),
+          end: vi.fn(),
+          on: onSpy,
+        })),
+      }));
+
+      process.env['DATABASE_URL'] = 'postgresql://localhost/test';
+      process.env['READONLY_MODE'] = 'true';
+
+      await import('../../src/client.js');
+
+      const connectCall = onSpy.mock.calls.find((call) => call[0] === 'connect');
+      expect(connectCall).toBeDefined();
+
+      const hook = connectCall?.[1] as (client: { query: (sql: string) => void }) => void;
+      const clientQuery = vi.fn();
+      hook({ query: clientQuery });
+      expect(clientQuery).toHaveBeenCalledWith(
+        'SET SESSION default_transaction_read_only = on'
       );
     });
   });

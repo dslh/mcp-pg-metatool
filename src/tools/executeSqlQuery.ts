@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { pool } from '../client.js';
+import { filterResult } from '../fieldFilter.js';
 import { parseNamedParameters, mapToPositional } from '../parameterMapper.js';
 import { withErrorHandling, type Logger } from '../responses.js';
 import { getTypeNames } from '../schemaService.js';
@@ -31,18 +32,29 @@ export const handler = ({
     log('executing query');
     const result = await pool.query(sql, positionalParams);
 
+    log('applying field blacklist');
+    const filtered = await filterResult(result);
+
     log('resolving type names');
-    const oids = result.fields.map(f => f.dataTypeID);
+    const oids = filtered.fields.map(f => f.dataTypeID);
     const typeNames = await getTypeNames(oids);
 
-    return JSON.stringify({
-      rows: result.rows,
+    const output: Record<string, unknown> = {
+      rows: filtered.rows,
       rowCount: result.rowCount,
-      fields: result.fields.map(f => ({
+      fields: filtered.fields.map(f => ({
         name: f.name,
         dataType: typeNames.get(f.dataTypeID) ?? 'unknown',
         dataTypeID: f.dataTypeID,
       })),
-    }, null, 2);
+    };
+    if (filtered.redactedColumns.length > 0) {
+      output['redactedColumns'] = filtered.redactedColumns;
+    }
+    if (filtered.unresolvedRedactions.length > 0) {
+      output['unresolvedRedactions'] = filtered.unresolvedRedactions;
+    }
+
+    return JSON.stringify(output, null, 2);
   });
 };
